@@ -1924,7 +1924,9 @@ TranslationBlock *afl_gen_edge(CPUState *cpu, unsigned long afl_id)
     CPUArchState *env = cpu->env_ptr;
     TranslationBlock *tb;
     tcg_insn_unit *gen_code_buf;
-    int gen_code_size, search_size;
+    int gen_code_size =1;
+    int search_size;
+
 
     assert_memory_lock();
 
