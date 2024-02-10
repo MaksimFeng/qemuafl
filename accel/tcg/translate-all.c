@@ -20,6 +20,7 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qemu-common.h"
+// typedef unsigned int AREA_SIZE;
 
 #define NO_CPU_IO_DEFS
 #include "cpu.h"
@@ -68,7 +69,6 @@
 #include "qemuafl/imported/afl_hash.h"
 
 #include <math.h>
-
 __thread int cur_block_is_good;
 
 static int afl_track_unstable_log_fd(void) {
@@ -85,20 +85,26 @@ static int afl_track_unstable_log_fd(void) {
     return track_fd;
 }
 
-void HELPER(afl_maybe_log)(target_ulong cur_loc) {
+// #define target_ulong long unsigned int
+
+void HELPER(afl_maybe_log)(target_ulong cur_loc, target_ulong size1) {
   register uintptr_t afl_idx = cur_loc ^ afl_prev_loc;
 
   INC_AFL_AREA(afl_idx);
+  UPDATE_AFL_AREA(afl_idx, size1);
 
   // afl_prev_loc = ((cur_loc & (MAP_SIZE - 1) >> 1)) |
   //                ((cur_loc & 1) << ((int)ceil(log2(MAP_SIZE)) -1));
   afl_prev_loc = cur_loc >> 1;
 }
 
-void HELPER(afl_maybe_log_trace)(target_ulong cur_loc) {
+void HELPER(afl_maybe_log_trace)(target_ulong cur_loc, target_ulong size) {
   register uintptr_t afl_idx = cur_loc;
   INC_AFL_AREA(afl_idx);
+  UPDATE_AFL_AREA(afl_idx, size);
+
 }
+//changed here
 
 static target_ulong pc_hash(target_ulong x) {
     x = ((x >> 16) ^ x) * 0x45d9f3b;
@@ -108,7 +114,7 @@ static target_ulong pc_hash(target_ulong x) {
 }
 
 /* Generates TCG code for AFL's tracing instrumentation. */
-static void afl_gen_trace(target_ulong cur_loc) {
+static void afl_gen_trace(target_ulong cur_loc, int size) {
 
   /* Optimize for cur_loc > afl_end_code, which is the most likely case on
      Linux systems. */
@@ -131,13 +137,16 @@ static void afl_gen_trace(target_ulong cur_loc) {
      address. This keeps the instrumented locations stable across runs. */
 
   if (cur_loc >= afl_inst_rms) return;
-
+  TCGv size_point = tcg_const_tl((target_ulong)size);
   TCGv cur_loc_v = tcg_const_tl(cur_loc);
   if (unlikely(afl_track_unstable_log_fd() >= 0)) {
-    gen_helper_afl_maybe_log_trace(cur_loc_v);
+    // gen_helper_afl_maybe_log_trace(cur_loc_v);
+    gen_helper_afl_maybe_log_trace(cur_loc_v, size_point);
   } else {
-    gen_helper_afl_maybe_log(cur_loc_v);
+    // gen_helper_afl_maybe_log(cur_loc_v);
+    gen_helper_afl_maybe_log(cur_loc_v, size_point);
   }
+  //change here
   tcg_temp_free(cur_loc_v);
 
 }
@@ -1794,9 +1803,7 @@ static void build_page_bitmap(PageDesc *p)
 #endif
 
 /* add the tb in the target page and protect it if necessary
- *
- * Called with mmap_lock held for user-mode emulation.
- * Called with @p->lock held in !user-mode.
+ *tl
  */
 static inline void tb_page_add(PageDesc *p, TranslationBlock *tb,
                                unsigned int n, tb_page_addr_t page_addr)
@@ -1924,9 +1931,8 @@ TranslationBlock *afl_gen_edge(CPUState *cpu, unsigned long afl_id)
     CPUArchState *env = cpu->env_ptr;
     TranslationBlock *tb;
     tcg_insn_unit *gen_code_buf;
-    int gen_code_size =1;
+    int gen_code_size = 0;
     int search_size;
-
 
     assert_memory_lock();
 
@@ -1957,7 +1963,10 @@ TranslationBlock *afl_gen_edge(CPUState *cpu, unsigned long afl_id)
     target_ulong afl_loc = afl_id & (MAP_SIZE -1);
     //*afl_dynamic_size = MAX(*afl_dynamic_size, afl_loc);
     TCGv tmp0 = tcg_const_tl(afl_loc);
-    gen_helper_afl_maybe_log(tmp0);
+    // int gen_code_size = 0;
+// fix me, size is not initialised, need to be done
+    TCGv size = tcg_const_tl((target_ulong)gen_code_size);
+    gen_helper_afl_maybe_log(tmp0, size);
     tcg_temp_free(tmp0);
     tcg_gen_goto_tb(0);
     tcg_gen_exit_tb(tb, 0);
@@ -2091,7 +2100,11 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tcg_func_start(tcg_ctx);
 
     tcg_ctx->cpu = env_cpu(env);
-    afl_gen_trace(pc);
+    if(getenv("AFL_PC_ADDRESS")){
+        fprintf(stderr, "AFL_PC_ADDRESS: %lu\n", pc);
+        }
+    afl_gen_trace(pc, max_insns);
+    //CHANGE THE CODE ACCORING TO THE MAXSIMUM INSTRUCTIONS
     gen_intermediate_code(cpu, tb, max_insns);
     tcg_ctx->cpu = NULL;
     max_insns = tb->icount;
