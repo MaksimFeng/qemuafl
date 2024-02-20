@@ -125,6 +125,10 @@ static void addDefUsePairToList(JsonData_list *jsonDataNode, target_ulong def, t
     jsonDataNode->data.def_use_count++;
 }
 
+
+
+
+
 static void freeDefUsePairList(DefUsePair_list* head) {
     while (head != NULL) {
         DefUsePair_list* temp = head;

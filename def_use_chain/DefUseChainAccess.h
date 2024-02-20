@@ -33,8 +33,10 @@ typedef struct JsonData_list {
     JsonData data;
     struct JsonData_list *next;
 } JsonData_list;
-
+// extern JsonData_list *jsonDataListHead;
 void read_json_from_file(const char *filename);
 JsonData_list* get_json_data_list(void);
 void free_json_data_list(void);
+void useDataInAnotherFile(void);
+
 #endif
