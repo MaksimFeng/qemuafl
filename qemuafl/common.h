@@ -174,9 +174,9 @@ static inline int is_valid_addr(target_ulong addr) {
   return 1;
 
 }
-
+//get memory address regions here for instrument
 static inline int afl_must_instrument(target_ulong addr) {
-
+//check if the address is in the range of the instrumented code: Kai
   // Reject any exclusion regions
   for (struct vmrange* n = afl_instr_code; n; n = n->next) {
     if (n->exclude && addr < n->end && addr >= n->start)

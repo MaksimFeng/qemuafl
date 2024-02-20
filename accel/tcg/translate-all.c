@@ -130,14 +130,16 @@ static void afl_gen_trace(target_ulong cur_loc, int size) {
 
   // cur_loc = (cur_loc >> 4) ^ (cur_loc << 8);
   // cur_loc &= MAP_SIZE - 1;
+  //location mangling The current location is then mangled to produce a quasi-uniform value. This is done by bit-shifting and XOR operations:  The mangled cur_loc is then masked to ensure it falls within the bounds of the AFL map size. which is used to record execution paths. Kai
   cur_loc = (uintptr_t)(afl_hash_ip((uint64_t)cur_loc));
   cur_loc &= (MAP_SIZE - 1);
 
   /* Implement probabilistic instrumentation by looking at scrambled block
      address. This keeps the instrumented locations stable across runs. */
-
-  if (cur_loc >= afl_inst_rms) return;
+    //It operates in the context of dynamic binary translation (DBT), where QEMU translates binary code from one architecture to another at runtime. TCG (Tiny Code Generator) is QEMU's intermediate representation for this purpose. Kai
+  if (cur_loc >= afl_inst_rms) return; //this code is not helpful for the current location
   TCGv size_point = tcg_const_tl((target_ulong)size);
+  //Here, a pointer to prev_loc is created using tcg_const_ptr, which is a helper function to create a constant pointer in TCG's intermediate representation. prev_loc is a static thread-local variable that stores the previously executed location.
   TCGv cur_loc_v = tcg_const_tl(cur_loc);
   if (unlikely(afl_track_unstable_log_fd() >= 0)) {
     // gen_helper_afl_maybe_log_trace(cur_loc_v);
@@ -2104,6 +2106,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         fprintf(stderr, "AFL_PC_ADDRESS: %lu\n", pc);
         }
     afl_gen_trace(pc, max_insns);
+    //get the address to do the instrument:kAI
     //CHANGE THE CODE ACCORING TO THE MAXSIMUM INSTRUCTIONS
     gen_intermediate_code(cpu, tb, max_insns);
     tcg_ctx->cpu = NULL;
@@ -2311,6 +2314,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         return existing_tb;
     }
     tcg_tb_insert(tb);
+    trace_translate_block_size(tb, tb->pc, tb->tc.ptr, tb->tc.size);
     return tb;
 }
 
