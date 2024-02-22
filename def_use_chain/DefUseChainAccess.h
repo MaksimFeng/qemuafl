@@ -1,15 +1,32 @@
 #include <stdint.h>
-#ifndef DATA_ACCESS_H
-#define DATA_ACCESS_H
+#include "uthash.h"
+#ifndef DEFUSECHAINACCESS_H
+#define DEFUSECHAINACCESS_H
 typedef int32_t target_long;
 typedef uint32_t target_ulong;
 typedef __SIZE_TYPE__ size_t;
 
 // Update to include a structure definition
-typedef struct {
+typedef struct DefUsePair{
     target_ulong def;
     target_ulong use;
+    struct DefUsePair *next;    
 }DefUsePair;
+
+typedef struct PcDefUseMapEntry{
+    target_ulong pc; // Key
+    DefUsePair *pairs; 
+    int num_pairs;
+    UT_hash_handle hh; 
+} PcDefUseMapEntry;
+
+extern PcDefUseMapEntry *pcDefUseMap;
+
+// void initDefUseMap();
+void addDefUsePairToMap(target_ulong pc, DefUsePair *pair);
+void printDefUsePairsForPC(target_ulong pc);
+void freeDefUseMap();
+
 
 typedef struct DefUsePair_list DefUsePair_list;
 
@@ -27,6 +44,7 @@ typedef struct {
     int num_use;
     DefUsePair_list* def_use_list_head; // Head of the linked list of def-use pairs
     size_t def_use_count; 
+    PcDefUseMapEntry *pcMap;
 } JsonData;
 
 typedef struct JsonData_list {
@@ -38,5 +56,9 @@ void read_json_from_file(const char *filename);
 JsonData_list* get_json_data_list(void);
 void free_json_data_list(void);
 void useDataInAnotherFile(void);
+
+
+
+
 
 #endif

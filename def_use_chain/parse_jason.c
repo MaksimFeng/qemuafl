@@ -2,9 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include "cjson/cJSON.h"
+#include "uthash.h"
 #include "DefUseChainAccess.h" // Make sure this matches the header file name
 
 static JsonData_list *jsonDataListHead = NULL;
+//using use to trace the def_use_chain, use hash map to store the def_use_chain according to the pc
 
 // Forward declaration of functions used internally
 static void addDefUsePairToList(JsonData_list *jsonDataNode, target_ulong def, target_ulong use);
@@ -13,6 +15,24 @@ static void freeDefUsePairList(DefUsePair_list* head);
 target_ulong hexStrToTargetUlong(const char *hexStr) {
     return (target_ulong)strtoul(hexStr, NULL, 16);
 }
+
+// void addDefUsePairToPcMap(PcDefUseMapEntry **map, target_ulong pc, target_ulong def, target_ulong use) {
+//     PcDefUseMapEntry *s;
+//     HASH_FIND_INT(*map, &pc, s); // Try to find the PC entry
+//     if (!s) {
+//         s = (PcDefUseMapEntry *)malloc(sizeof(PcDefUseMapEntry));
+//         s->pc = pc;
+//         s->pairs = NULL; // Initially no pairs
+//         HASH_ADD_INT(*map, pc, s);
+//     }
+//     // Add new pair to the list for this PC
+//     DefUsePair *newPair = (DefUsePair *)malloc(sizeof(DefUsePair));
+//     newPair->def = def;
+//     newPair->use = use;
+//     newPair->next = s->pairs; // Insert at head
+//     s->pairs = newPair;
+// }
+
 
 void parse_json(const char *json_string) {
     cJSON *json = cJSON_Parse(json_string);
@@ -128,12 +148,78 @@ static void addDefUsePairToList(JsonData_list *jsonDataNode, target_ulong def, t
 
 
 
-
 static void freeDefUsePairList(DefUsePair_list* head) {
     while (head != NULL) {
         DefUsePair_list* temp = head;
         head = head->next;
         free(temp->def_use_chain);
         free(temp);
+    }
+}
+
+
+
+// manipulate the hash table
+// void initDefUseMap() {
+//     pcDefUseMap = NULL; // Ensure it's empty
+//     HASH_INIT(pcDefUseMap, UTHASH_PC, 0, 0, 0); // Initialize uthash
+// }
+
+
+// Global hash map variable
+PcDefUseMapEntry *pcDefUseMap = NULL;
+
+// Adds a def-use pair to the hash map for a given PC
+void addDefUsePairToMap(target_ulong pc, DefUsePair *pair) {
+    PcDefUseMapEntry *s;
+
+    // Check if the entry for this PC already exists
+    HASH_FIND(hh, pcDefUseMap, &pc, sizeof(pc), s);
+    if (s == NULL) {
+        s = (PcDefUseMapEntry *)malloc(sizeof(PcDefUseMapEntry));
+        s->pc = pc;
+        s->pairs = NULL;
+        s->num_pairs = 0;
+        HASH_ADD(hh, pcDefUseMap, pc, sizeof(pc), s);
+    }
+
+    // Add the new pair to the front of the list
+    pair->next = s->pairs;
+    s->pairs = pair;
+    s->num_pairs++;
+}
+
+// Prints all def-use pairs for a given PC
+void printDefUsePairsForPC(target_ulong pc) {
+    PcDefUseMapEntry *s;
+
+    HASH_FIND(hh, pcDefUseMap, &pc, sizeof(pc), s);
+    if (s != NULL) {
+        printf("PC: 0x%x has %d def-use pairs:\n", s->pc, s->num_pairs);
+        DefUsePair *pair = s->pairs;
+        while (pair != NULL) {
+            printf("  Def: 0x%x, Use: 0x%x\n", pair->def, pair->use);
+            pair = pair->next;
+        }
+    } else {
+        printf("No def-use pairs found for PC: 0x%x\n", pc);
+    }
+}
+
+// Frees the hash map
+void freeDefUseMap() {
+    PcDefUseMapEntry *current, *tmp;
+
+    HASH_ITER(hh, pcDefUseMap, current, tmp) {
+        // Free the list of def-use pairs
+        DefUsePair *pair = current->pairs;
+        while (pair != NULL) {
+            DefUsePair *next = pair->next;
+            free(pair);
+            pair = next;
+        }
+        // Delete the hash map entry
+        HASH_DEL(pcDefUseMap, current);
+        free(current);
     }
 }

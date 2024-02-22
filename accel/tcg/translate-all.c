@@ -99,12 +99,31 @@ void HELPER(afl_maybe_log)(target_ulong cur_loc, target_ulong size1) {
   afl_prev_loc = cur_loc >> 1;
 }
 
+
 void HELPER(afl_maybe_log_trace)(target_ulong cur_loc, target_ulong size) {
   register uintptr_t afl_idx = cur_loc;
   INC_AFL_AREA(afl_idx);
   UPDATE_AFL_AREA(afl_idx, size);
 
 }
+void HELPER(afl_def_use_chain)(target_long cur_loc) {
+    JsonData_list* current = get_json_data_list(); // Correctly initialize 'current' from the function
+// lookup 
+    for (; current != NULL; current = current->next) { 
+        if (current->data.pc == cur_loc) {
+            for (DefUsePair_list *dupl = current->data.def_use_list_head; dupl != NULL; dupl = dupl->next) {
+                for (DefUsePair *dup = dupl->def_use_chain; dup != NULL; dup = dup->next) {
+                    // compute previously
+                    dup->def = afl_hash_ip(dup->def); 
+                    dup->use = afl_hash_ip(dup->use); 
+                    register uintptr_t afl_idx = dup->def ^ dup->use; // Compute the index for AFL area
+                    INC_AFL_AREA(afl_idx); // Increment the AFL area at the computed index
+                }
+            }
+        }
+    }
+}
+
 //changed here
 
 static target_ulong pc_hash(target_ulong x) {
@@ -2107,6 +2126,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         fprintf(stderr, "AFL_PC_ADDRESS: %lu\n", pc);
         }
     afl_gen_trace(pc, max_insns);
+    gen_helper_afl_def_use_chain(pc);
     //get the address to do the instrument:kAI
     //CHANGE THE CODE ACCORING TO THE MAXSIMUM INSTRUCTIONS
     gen_intermediate_code(cpu, tb, max_insns);
