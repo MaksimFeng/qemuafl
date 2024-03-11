@@ -3,7 +3,7 @@
 #include <inttypes.h>
 
 void printDefUsePair(const DefUsePair* pair) {
-    printf("Def: %x, Use: %x\n", pair->def, pair->use);
+    printf("Def: %"PRIxPTR", Use: %"PRIxPTR"\n", pair->def, pair->use);
 }
 
 void printDefUsePairs(const DefUsePair_list* list) {
@@ -15,29 +15,21 @@ void printDefUsePairs(const DefUsePair_list* list) {
 
 
 int main() {
-    read_json_from_file("data_def_use_chain.json");
+    useDataInAnotherFile();
+    uintptr_t lookup_pc = 401000;
+    // uintptr_t lookup_pc2 = strtoul(lookup_pc, NULL, 16);
+    printf("Printing def-use pairs for PC: 0x%"PRIxPTR"\n", lookup_pc);
+    // printDefUsePairsForPC(lookup_pc);
+    DefUsePair* pair = getDefUsePairForPC(lookup_pc);
+    // printf("Def: 0x%x, Use: 0x%x\n", pair->def, pair->use);
+    // if (pair == NULL) {
+    //     printf("No def-use pairs found for PC: 0x%x\n", lookup_pc);
+    // }
 
-    // useDataInAnotherFile();
-    JsonData_list* dataList = get_json_data_list();
-
-    while (dataList) {
-        JsonData* data = &dataList->data;
-        DefUsePair_list* defUseList = data->def_use_list_head;
-        // printf("TB: %x, PC: %x, TB_CODE: %x\n", data->tb, data->pc, data->tb_code);
-        // printf("Size: %zu, Num_Def: %d, Num_Use: %d\n", data->size, data->num_def, data->num_use);
-        
-        // printDefUsePairs(data->def_use_list_head);
-        while(defUseList){
-            DefUsePair* pair = defUseList->def_use_chain;
-            addDefUsePairToMap(data->pc, pair);
-            defUseList = defUseList->next;
-        }
-        
-        dataList = dataList->next;
+    while (pair != NULL) {
+        printf("the finding Def: 0x%"PRIxPTR", Use: 0x%"PRIxPTR"\n", pair->def, pair->use);
+        pair = pair->next; // Move to the next pair in the list
     }
-    target_long lookup_pc = 0x401000;
-    printf("Printing def-use pairs for PC: 0x%" PRIx32 "\n", lookup_pc);
-    printDefUsePairsForPC(lookup_pc);
     free_json_data_list();
     freeDefUseMap();
     return 0;

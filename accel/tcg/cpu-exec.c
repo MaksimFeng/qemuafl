@@ -36,6 +36,11 @@
 #include "exec/log.h"
 #include "qemu/main-loop.h"
 #include "qemu/selfmap.h"
+// #include "def_use_chain/DefUseChainAccess.h"
+// #include "qemuafl/common.h"
+#include "qemuafl/uthash.h"
+#include <inttypes.h>
+#include <cjson/cJSON.h>
 #if defined(TARGET_I386) && !defined(CONFIG_USER_ONLY)
 #include "hw/i386/apic.h"
 #endif
@@ -50,6 +55,8 @@
 
 #include <string.h>
 #include <sys/shm.h>
+
+
 #ifndef AFL_QEMU_STATIC_BUILD
   #include <dlfcn.h>
 #endif
@@ -148,6 +155,229 @@ static inline TranslationBlock *tb_find(CPUState *, TranslationBlock *, int,
 static inline void              tb_add_jump(TranslationBlock *tb, int n,
                                             TranslationBlock *tb_next);
 static void                     afl_map_shm_fuzz(void);
+
+
+// DATAFLOW!!!!!!!!!
+
+
+target_ulong hexStrToTargetUlong(const char *hexStr) {
+    return (target_ulong)strtoul(hexStr, NULL, 16);
+}
+uintptr_t hexStrTouintptr_t(const char *hexStr) {
+    return (uintptr_t)strtoul(hexStr, NULL, 16);
+}
+
+void parse_json(const char *json_string) {
+    cJSON *json = cJSON_Parse(json_string);
+    if (json == NULL) {
+        fprintf(stderr, "Error in parsing JSON\n");
+        return;
+    }
+
+    cJSON *entry = NULL;
+    cJSON_ArrayForEach(entry, json) {
+        JsonData_list* newNode = (JsonData_list*)malloc(sizeof(JsonData_list));
+        if (!newNode) return;
+
+        memset(&newNode->data, 0, sizeof(JsonData)); // Initialize JsonData to zeros
+        newNode->next = NULL;
+
+        cJSON *tb = cJSON_GetObjectItemCaseSensitive(entry, "tb");
+        cJSON *pc = cJSON_GetObjectItemCaseSensitive(entry, "pc");
+        cJSON *tb_code = cJSON_GetObjectItemCaseSensitive(entry, "tb_code");
+        cJSON *size = cJSON_GetObjectItemCaseSensitive(entry, "size");
+        cJSON *num_def = cJSON_GetObjectItemCaseSensitive(entry, "num_def");
+        cJSON *num_use = cJSON_GetObjectItemCaseSensitive(entry, "num_use");
+
+        if (tb) newNode->data.tb = hexStrToTargetUlong(tb->valuestring);
+        if (pc) newNode->data.pc = hexStrTouintptr_t(pc->valuestring);
+        if (tb_code) newNode->data.tb_code = hexStrToTargetUlong(tb_code->valuestring);
+        if (size) newNode->data.size = (size_t)strtoul(size->valuestring, NULL, 16);
+        newNode->data.num_def = num_def ? num_def->valueint : 0;
+        newNode->data.num_use = num_use ? num_use->valueint : 0;
+
+        // Process the def_use_chain
+        cJSON *def_use_chain = cJSON_GetObjectItemCaseSensitive(entry, "def_use_chain");
+        cJSON *pair;
+        cJSON_ArrayForEach(pair, def_use_chain) {
+            cJSON *def = cJSON_GetArrayItem(pair, 0);
+            cJSON *use = cJSON_GetArrayItem(pair, 1);
+            if (def && use) {
+                addDefUsePairToList(newNode, hexStrTouintptr_t(def->valuestring), hexStrTouintptr_t(use->valuestring));
+            }
+        }
+
+        // Append newNode to the list
+        if (jsonDataListHead == NULL) {
+            jsonDataListHead = newNode;
+        } else {
+            JsonData_list *current = jsonDataListHead;
+            while (current->next != NULL) {
+                current = current->next;
+            }
+            current->next = newNode;
+        }
+    }
+
+    cJSON_Delete(json);
+}
+
+void read_json_from_file(const char *filename) {
+    FILE *file = fopen(filename, "rb");
+    if (!file) {
+        perror("Unable to open the file");
+        return;
+    }
+
+    fseek(file, 0, SEEK_END);
+    long length = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    char *data = (char *)malloc(length + 1);
+    if (!data) {
+        fclose(file);
+        return;
+    }
+
+    fread(data, 1, length, file);
+    data[length] = '\0';
+
+    parse_json(data);
+
+    free(data);
+    fclose(file);
+}
+
+JsonData_list* get_json_data_list(void) {
+    return jsonDataListHead;
+}
+
+void free_json_data_list(void) {
+    while (jsonDataListHead != NULL) {
+        JsonData_list* temp = jsonDataListHead;
+        jsonDataListHead = jsonDataListHead->next;
+        freeDefUsePairList(temp->data.def_use_list_head); // Free the DefUsePair list
+        free(temp); // Then free the JsonData_list node itself
+    }
+}
+
+static void addDefUsePairToList(JsonData_list *jsonDataNode, uintptr_t def, uintptr_t use) {
+    DefUsePair_list* newNode = (DefUsePair_list*)malloc(sizeof(DefUsePair_list));
+    if (!newNode) return;
+    
+    newNode->def_use_chain = (DefUsePair*)malloc(sizeof(DefUsePair));
+    if (!newNode->def_use_chain) {
+        free(newNode);
+        return;
+    }
+
+    newNode->def_use_chain->def = def;
+    newNode->def_use_chain->use = use;
+    newNode->next = jsonDataNode->data.def_use_list_head;
+    jsonDataNode->data.def_use_list_head = newNode;
+    jsonDataNode->data.def_use_count++;
+}
+
+
+
+
+static void freeDefUsePairList(DefUsePair_list* head) {
+    while (head != NULL) {
+        DefUsePair_list* temp = head;
+        head = head->next;
+        free(temp->def_use_chain);
+        free(temp);
+    }
+}
+
+
+
+// manipulate the hash table
+// void initDefUseMap() {
+//     pcDefUseMap = NULL; // Ensure it's empty
+//     HASH_INIT(pcDefUseMap, UTHASH_PC, 0, 0, 0); // Initialize uthash
+// }
+
+
+// Global hash map variable
+PcDefUseMapEntry *pcDefUseMap = NULL;
+
+// Adds a def-use pair to the hash map for a given PC
+void addDefUsePairToMap(uintptr_t pc, DefUsePair *pair) {
+    PcDefUseMapEntry *s;
+
+    // Check if the entry for this PC already exists
+    HASH_FIND(hh, pcDefUseMap, &pc, sizeof(pc), s);
+    if (s == NULL) {
+        s = (PcDefUseMapEntry *)malloc(sizeof(PcDefUseMapEntry));
+        s->pc = pc;
+        s->pairs = NULL;
+        s->num_pairs = 0;
+        HASH_ADD(hh, pcDefUseMap, pc, sizeof(pc), s);
+    }
+
+    // Add the new pair to the front of the list
+    pair->next = s->pairs;
+    s->pairs = pair;
+    s->num_pairs++;
+}
+
+// Prints all def-use pairs for a given PC
+void printDefUsePairsForPC(uintptr_t pc) {
+    PcDefUseMapEntry *s;
+
+    HASH_FIND(hh, pcDefUseMap, &pc, sizeof(pc), s);
+    if (s != NULL) {
+        // printf("PC: 0x%x has %d def-use pairs:\n", s->pc, s->num_pairs);
+        DefUsePair *pair = s->pairs;
+        while (pair != NULL) {
+            // printf("  Def: 0x%x, Use: 0x%x\n", pair->def, pair->use);
+            // return pair;
+            pair = pair->next;
+        }
+    } else {
+        printf("No def-use pairs found for PC");
+    }
+    // return pair;
+}
+DefUsePair* getDefUsePairForPC(uintptr_t pc){
+    //return defs and uses according to pc
+    PcDefUseMapEntry *s;
+
+    HASH_FIND(hh, pcDefUseMap, &pc, sizeof(pc), s);
+    if (s != NULL) {
+        DefUsePair *pair = s->pairs;
+        return pair;
+    } else {
+        // printf("No def-use pairs found for PC: 0x%x\n", pc);
+        return NULL;
+    }    
+}
+
+// Frees the hash map
+void freeDefUseMap() {
+    PcDefUseMapEntry *current, *tmp;
+
+    HASH_ITER(hh, pcDefUseMap, current, tmp) {
+        // Free the list of def-use pairs
+        DefUsePair *pair = current->pairs;
+        while (pair != NULL) {
+            DefUsePair *next = pair->next;
+            free(pair);
+            pair = next;
+        }
+        // Delete the hash map entry
+        HASH_DEL(pcDefUseMap, current);
+        free(current);
+    }
+}
+
+
+
+
+
+
+
 
 /*************************
  * ACTUAL IMPLEMENTATION *
@@ -310,7 +540,28 @@ void afl_setup(void) {
   char *id_str = getenv(SHM_ENV_VAR), *inst_r = getenv("AFL_INST_RATIO");
 
   int shm_id;
-
+  // read_json_from_file("/home/kai/project/qemu-afl/AFLPLUSSPLUSS_DEV/AFLplusplus/qemu_mode/qemuafl/accel/tcg/data_def_use_chain.json");
+  read_json_from_file("/home/kai/project/qemu-afl/AFLPLUSSPLUSS_DEV/angr/bin/addr2lin/data_def_use_chain.json");
+  // read_json_from_file(getenv("_afl_dataflow_file"));
+  JsonData_list* dataList = get_json_data_list();
+  if(dataList!=NULL){
+    printf("The dataflow model is loaded\n");
+  }
+  while (dataList) {
+        JsonData* data = &dataList->data;
+        DefUsePair_list* defUseList = data->def_use_list_head;
+        
+        // fprintf(stderr, "TB: %x, PC: %x, TB_CODE: %x\n", data->tb, data->pc, data->tb_code);
+        while(defUseList){
+            DefUsePair* pair = defUseList->def_use_chain;
+            // fprintf(stderr, "Def: %x, Use: %x\n", pair->def, pair->use);
+            // fprintf(stderr, "TB: %x, PC: 0x%"PRIxPTR", TB_CODE: %x\n", data->tb, data->pc, data->tb_code);
+            addDefUsePairToMap(data->pc, pair);
+            defUseList = defUseList->next;
+        }
+        
+        dataList = dataList->next;
+    }
   if (inst_r) {
 
     unsigned int r;
@@ -328,15 +579,48 @@ void afl_setup(void) {
 
     shm_id = atoi(id_str);
     afl_area_ptr = shmat(shm_id, NULL, 0);
+    
+    // fprintf(stderr, "The dataflow model is loaded\n");
 
+    // DefUsePair* pair = getDefUsePairForPC(0x401000);
+    // while (pair != NULL) {
+    //     fprintf(stderr, "the finding Def: 0x%x, Use: 0x%x\n", pair->def, pair->use);
+    //     pair = pair->next; // Move to the next pair in the list
+    // }
     if (afl_area_ptr == (void *)-1) exit(1);
 
     /* With AFL_INST_RATIO set to a low value, we want to touch the bitmap
        so that the parent doesn't give up on us. */
 
     if (inst_r) afl_area_ptr[0] = 1;
+    // read_json_from_file("/home/kai/project/qemu-afl/AFLPLUSSPLUSS_DEV/AFLplusplus/qemu_mode/qemuafl/accel/tcg/data_def_use_chain.json");
+    // JsonData_list* dataList = get_json_data_list();
+    // while (dataList) {
+    //     JsonData* data = &dataList->data;
+    //     DefUsePair_list* defUseList = data->def_use_list_head;
+        
+    //     // fprintf(stderr, "TB: %x, PC: %x, TB_CODE: %x\n", data->tb, data->pc, data->tb_code);
+    //     while(defUseList){
+    //         DefUsePair* pair = defUseList->def_use_chain;
+    //         // fprintf(stderr, "Def: %x, Use: %x\n", pair->def, pair->use);
+    //         // fprintf(stderr, "TB: %x, PC: 0x%"PRIxPTR", TB_CODE: %x\n", data->tb, data->pc, data->tb_code);
+    //         addDefUsePairToMap(data->pc, pair);
+    //         defUseList = defUseList->next;
+    //     }
+        
+    //     dataList = dataList->next;
+    // }
+    // // fprintf(stderr, "The dataflow model is loaded\n");
 
+    // // DefUsePair* pair = getDefUsePairForPC(0x401000);
+    // // while (pair != NULL) {
+    // //     fprintf(stderr, "the finding Def: 0x%x, Use: 0x%x\n", pair->def, pair->use);
+    // //     pair = pair->next; // Move to the next pair in the list
+    // // }
+    // printf("The dataflow model is loaded\n");
   }
+
+  
   
   disable_caching = getenv("AFL_QEMU_DISABLE_CACHE") != NULL;
 
@@ -355,6 +639,35 @@ void afl_setup(void) {
     }
 
   }
+  // if(getenv("AFL_PC_ADDRESS")){
+  //   read_json_from_file("/home/kai/project/qemu-afl/AFLPLUSSPLUSS_DEV/AFLplusplus/qemu_mode/qemuafl/accel/tcg/data_def_use_chain.json");
+  //   JsonData_list* dataList = get_json_data_list();
+  //   while (dataList) {
+  //       JsonData* data = &dataList->data;
+  //       DefUsePair_list* defUseList = data->def_use_list_head;
+        
+  //       // fprintf(stderr, "TB: %x, PC: %x, TB_CODE: %x\n", data->tb, data->pc, data->tb_code);
+  //       while(defUseList){
+  //           DefUsePair* pair = defUseList->def_use_chain;
+  //           // fprintf(stderr, "Def: %x, Use: %x\n", pair->def, pair->use);
+  //           // fprintf(stderr, "TB: %x, PC: 0x%"PRIxPTR", TB_CODE: %x\n", data->tb, data->pc, data->tb_code);
+  //           addDefUsePairToMap(data->pc, pair);
+  //           defUseList = defUseList->next;
+  //       }
+        
+  //       dataList = dataList->next;
+  //   }
+  //   // fprintf(stderr, "The dataflow model is loaded\n");
+
+  //   // DefUsePair* pair = getDefUsePairForPC(0x401000);
+  //   // while (pair != NULL) {
+  //   //     fprintf(stderr, "the finding Def: 0x%x, Use: 0x%x\n", pair->def, pair->use);
+  //   //     pair = pair->next; // Move to the next pair in the list
+  //   // }
+  //   printf("The dataflow model is loaded\n");
+  // }
+ 
+
 
   if (getenv("AFL_INST_LIBS")) {
 

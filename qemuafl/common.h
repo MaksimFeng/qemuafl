@@ -38,6 +38,7 @@
 #include "imported/types.h"
 #include "imported/cmplog.h"
 #include "api.h"
+#include "uthash.h"
 
 /* We use one additional file descriptor to relay "needs translation"
    messages between the child and the fork server. */
@@ -195,6 +196,65 @@ static inline int afl_must_instrument(target_ulong addr) {
   return 0;
 
 }
+typedef struct DefUsePair{
+    uintptr_t def;
+    uintptr_t use;
+    struct DefUsePair *next;    
+}DefUsePair;
+
+
+typedef struct PcDefUseMapEntry{
+    uintptr_t pc; // Key
+    DefUsePair *pairs; 
+    int num_pairs;
+    UT_hash_handle hh; 
+} PcDefUseMapEntry;
+
+extern PcDefUseMapEntry *pcDefUseMap;
+
+// void initDefUseMap();
+void addDefUsePairToMap(target_ulong pc, DefUsePair *pair);
+void printDefUsePairsForPC(target_ulong pc);
+void freeDefUseMap(void);
+DefUsePair* getDefUsePairForPC(target_ulong pc);
+extern char formatted_string[100]; 
+
+typedef struct DefUsePair_list DefUsePair_list;
+
+struct DefUsePair_list{
+    DefUsePair *def_use_chain;
+    DefUsePair_list *next;     
+} ;
+
+typedef struct {
+    target_ulong tb;
+    uintptr_t pc;
+    target_ulong tb_code;
+    size_t size;
+    int num_def;
+    int num_use;
+    DefUsePair_list* def_use_list_head; // Head of the linked list of def-use pairs
+    size_t def_use_count; 
+    PcDefUseMapEntry *pcMap;
+} JsonData;
+
+typedef struct JsonData_list {
+    JsonData data;
+    struct JsonData_list *next;
+} JsonData_list;
+
+void read_json_from_file(const char *filename);
+JsonData_list* get_json_data_list(void);
+void free_json_data_list(void);
+void useDataInAnotherFile(void);
+static JsonData_list *jsonDataListHead = NULL;
+
+static void addDefUsePairToList(JsonData_list *jsonDataNode, uintptr_t def, uintptr_t use);
+
+
+static void freeDefUsePairList(DefUsePair_list* head);
+
+
 
 #endif
 

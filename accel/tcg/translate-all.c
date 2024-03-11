@@ -21,14 +21,14 @@
 #include "qemu/units.h"
 #include "qemu-common.h"
 // typedef unsigned int AREA_SIZE;
-
+#include "debug.h"
 #define NO_CPU_IO_DEFS
 #include "cpu.h"
 #include "trace.h"
 #include "disas/disas.h"
 #include "exec/exec-all.h"
 #include "tcg/tcg.h"
-#include "def_use_chain/DefUseChainAccess.h"
+// #include "def_use_chain/DefUseChainAccess.h"
 #if defined(CONFIG_USER_ONLY)
 #include "qemu.h"
 #if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
@@ -89,41 +89,134 @@ static int afl_track_unstable_log_fd(void) {
 // #define target_ulong long unsigned int
 
 void HELPER(afl_maybe_log)(target_ulong cur_loc, target_ulong size1) {
-  register uintptr_t afl_idx = cur_loc ^ afl_prev_loc;
+    // if (size1 != NULL) {
+    // register uintptr_t afl_idx = cur_loc ^ size1;
+    // INC_AFL_AREA(afl_idx);
+    // UPDATE_AFL_AREA(afl_idx, size);
+    register uintptr_t afl_idx = cur_loc;
+    INC_AFL_AREA(afl_idx);
+}
+//   }  else{
+    
+//   }
+//   register uintptr_t afl_idx = cur_loc ^ afl_prev_loc;
 
-  INC_AFL_AREA(afl_idx);
-  UPDATE_AFL_AREA(afl_idx, size1);
+//   INC_AFL_AREA(afl_idx);
+//   UPDATE_AFL_AREA(afl_idx, size1);
 
   // afl_prev_loc = ((cur_loc & (MAP_SIZE - 1) >> 1)) |
   //                ((cur_loc & 1) << ((int)ceil(log2(MAP_SIZE)) -1));
-  afl_prev_loc = cur_loc >> 1;
-}
+//   afl_prev_loc = cur_loc >> 1;
+// }
 
 
 void HELPER(afl_maybe_log_trace)(target_ulong cur_loc, target_ulong size) {
-  register uintptr_t afl_idx = cur_loc;
-  INC_AFL_AREA(afl_idx);
-  UPDATE_AFL_AREA(afl_idx, size);
+//   if (size != NULL) {
+    // register uintptr_t afl_idx = cur_loc ^ size;
+    // INC_AFL_AREA(afl_idx);
+    // UPDATE_AFL_AREA(afl_idx, size);
+//   }  else{
+    register uintptr_t afl_idx = cur_loc;
+    INC_AFL_AREA(afl_idx);
+  }
+//   register uintptr_t afl_idx = cur_loc;
+//   INC_AFL_AREA(afl_idx);
+//   UPDATE_AFL_AREA(afl_idx, size);
 
+// }
+void HELPER(afl_def_use_chain)(target_ulong def, target_ulong use) {
+    register uintptr_t afl_idx = def ^ use;
+    INC_AFL_AREA(afl_idx);
 }
-void HELPER(afl_def_use_chain)(target_long cur_loc) {
-    JsonData_list* current = get_json_data_list(); // Correctly initialize 'current' from the function
+    // JsonData_list* current = get_json_data_list(); // Correctly initialize 'current' from the function
 // lookup 
-    for (; current != NULL; current = current->next) { 
-        if (current->data.pc == cur_loc) {
-            for (DefUsePair_list *dupl = current->data.def_use_list_head; dupl != NULL; dupl = dupl->next) {
-                for (DefUsePair *dup = dupl->def_use_chain; dup != NULL; dup = dup->next) {
-                    // compute previously
-                    dup->def = afl_hash_ip(dup->def); 
-                    dup->use = afl_hash_ip(dup->use); 
-                    register uintptr_t afl_idx = dup->def ^ dup->use; // Compute the index for AFL area
-                    INC_AFL_AREA(afl_idx); // Increment the AFL area at the computed index
-                }
-            }
-        }
-    }
-}
+    // TCGv cur_loc = tcg_const_tl(cur_loc);
 
+    // for (; current != NULL; current = current->next) { 
+    //     if (current->data.pc == cur_loc_pc) {
+    //         for (DefUsePair_list *dupl = current->data.def_use_list_head; dupl != NULL; dupl = dupl->next) {
+    //             for (DefUsePair *dup = dupl->def_use_chain; dup != NULL; dup = dup->next) {
+    //                 // compute previously
+    //                 dup->def = afl_hash_ip(dup->def); 
+    //                 dup->use = afl_hash_ip(dup->use); 
+    //                 register uintptr_t afl_idx = dup->def ^ dup->use; // Compute the index for AFL area
+    //                 INC_AFL_AREA(afl_idx); // Increment the AFL area at the computed index
+    //             }
+    //         }
+    //     }
+    // }
+
+static void process_def_use_chain(void * tb, uintptr_t cur_pc, const void * tb_code) {
+    // fprintf(stderr, "Processing def-use chain for PC: 0x%"PRIxPTR"\n", cur_pc);
+    // target_ulong position = cur_pc;
+    // fprintf(stderr, "tb_code:%p\n", tb_code);
+    // fprintf(stderr, "tb:%p\n", tb);
+    // fprintf(stderr, "position: 0x%"PRIxPTR"\n", cur_pc);
+    DefUsePair* pair = getDefUsePairForPC(cur_pc);
+    // fprintf(stderr,"The current Address is %lu\n", cur_pc);
+    // if(pcDefUseMap != NULL){
+    //     if(getenv("AFL_DATAFLOW")){
+    //         fprintf(stderr, "Get Hashmap: %"PRIxPTR"\n", cur_pc);
+    //     }
+    // }
+    // fprintf(stderr, "pair: %p\n", pair);
+    // while (pair != NULL) {
+    //     fprintf(stderr, "the finding Def: 0x%x, Use: 0x%x\n", pair->def, pair->use);
+    //     pair = pair->next; // Move to the next pair in the list
+    // }
+    // if(getenv("AFL_DATAFLOW")){
+    //         fprintf(stderr, "Def: 0x%x, Use: 0x%x\n", pair->def, pair->use);
+    //     }
+    uintptr_t def = 0;
+    uintptr_t use = 0;
+    while(pair != NULL && pair->use != 0){
+        //  && pair->use != 0) {
+        // fprintf(stderr, "pair1: %p\n", pair);
+        // fprintf(stderr, "pair23232: %p\n", pair);
+        // fprintf(stderr, "pair2: %p\n", pair);
+        fprintf(stderr, "Befor HashDef: 0x%x, Use: 0x%x\n", pair->def, pair->use);
+        def = (uintptr_t)afl_hash_ip((uint64_t)pair->def); 
+        use = (uintptr_t)afl_hash_ip((uint64_t)pair->use); 
+        // fprintf(stderr, "pair1: %p\n", pair);
+        // uintptr_t def_aglin = def % 0x10000;
+        // uintptr_t use_aglin = use % 0x10000;
+        // fprintf(stderr, "pair: %p\n", pair);
+        // fprintf(stderr, "Def: 0x%x, Use: 0x%x\n", pair->def, pair->use);
+        // fprintf(stderr, "Def: 0x%x, Use: 0x%x\n", def, use);
+     
+        // register uintptr_t afl_idx = def ^ use;
+        // printf("Def: 0x%x, Use: 0x%x\n", pair->def, pair->use);
+        // register uintptr_t afl_idx = def ^ use;
+        // fprintf(stderr, "def: 0x%"PRIxPTR"\n", def);
+        // fprintf(stderr, "use: 0x%"PRIxPTR"\n", use);
+        // fprintf(stderr, "cur_pc: 0x%"PRIxPTR"\n", cur_pc);
+        def &= (MAP_SIZE - 1);
+        use &= (MAP_SIZE - 1);
+        fprintf(stderr, "afterhash: %p\n", def);
+
+        TCGv def_v = tcg_const_tl((uintptr_t)def);
+
+        TCGv use_v = tcg_const_tl((uintptr_t)use);
+        
+        // cur_pc = (uintptr_t)(afl_hash_ip((uint64_t)cur_pc));
+        // cur_pc &= (MAP_SIZE - 1);
+        // TCGv cur_loc_v = tcg_const_tl(cur_pc);
+        fprintf(stderr, "afterhash: %p\n", cur_pc);
+        gen_helper_afl_def_use_chain(use_v, def_v);
+        // if (unlikely(afl_track_unstable_log_fd() >= 0)) {
+        //     gen_helper_afl_maybe_log_trace(def, use);
+        // } else {
+        //     gen_helper_afl_maybe_log(def, use);
+        // }
+        OKF("pair3: !!!!!!!!!" );
+        pair = pair->next;
+        // tcg_temp_free(cur_loc_v);
+        tcg_temp_free(def_v);
+        tcg_temp_free(use_v);
+
+    } 
+
+}
 //changed here
 
 static target_ulong pc_hash(target_ulong x) {
@@ -138,7 +231,9 @@ static void afl_gen_trace(target_ulong cur_loc, int size) {
 
   /* Optimize for cur_loc > afl_end_code, which is the most likely case on
      Linux systems. */
-
+//   if(getenv("AFL_PC_ADDRESS")){
+//         fprintf(stderr, "BUT: %lu\n", cur_loc);
+//         }
   cur_block_is_good = afl_must_instrument(cur_loc);
 
   if (!cur_block_is_good)
@@ -151,14 +246,17 @@ static void afl_gen_trace(target_ulong cur_loc, int size) {
   // cur_loc = (cur_loc >> 4) ^ (cur_loc << 8);
   // cur_loc &= MAP_SIZE - 1;
   //location mangling The current location is then mangled to produce a quasi-uniform value. This is done by bit-shifting and XOR operations:  The mangled cur_loc is then masked to ensure it falls within the bounds of the AFL map size. which is used to record execution paths. Kai
+//   fprintf(stderr, "cur_loc before : %lu\n", cur_loc);
   cur_loc = (uintptr_t)(afl_hash_ip((uint64_t)cur_loc));
   cur_loc &= (MAP_SIZE - 1);
+//   fprintf(stderr, "cur_loc after : 0x%"PRIxPTR"\n", cur_loc);
 
   /* Implement probabilistic instrumentation by looking at scrambled block
      address. This keeps the instrumented locations stable across runs. */
     //It operates in the context of dynamic binary translation (DBT), where QEMU translates binary code from one architecture to another at runtime. TCG (Tiny Code Generator) is QEMU's intermediate representation for this purpose. Kai
   if (cur_loc >= afl_inst_rms) return; //this code is not helpful for the current location
   TCGv size_point = tcg_const_tl((target_ulong)size);
+//   fprintf(stderr,"The current Address is %lu\n", cur_loc);
   //Here, a pointer to prev_loc is created using tcg_const_ptr, which is a helper function to create a constant pointer in TCG's intermediate representation. prev_loc is a static thread-local variable that stores the previously executed location.
   TCGv cur_loc_v = tcg_const_tl(cur_loc);
   if (unlikely(afl_track_unstable_log_fd() >= 0)) {
@@ -170,6 +268,7 @@ static void afl_gen_trace(target_ulong cur_loc, int size) {
   }
   //change here
   tcg_temp_free(cur_loc_v);
+  tcg_temp_free(size_point);
 
 }
 
@@ -1977,6 +2076,7 @@ TranslationBlock *afl_gen_edge(CPUState *cpu, unsigned long afl_id)
     tb->cflags = 0;
     tb->trace_vcpu_dstate = *cpu->trace_dstate;
     tcg_ctx->tb_cflags = 0;
+    fprintf(stderr,"The currentis %lu\n", tb->pc);
 
     tcg_func_start(tcg_ctx);
 
@@ -1989,6 +2089,7 @@ TranslationBlock *afl_gen_edge(CPUState *cpu, unsigned long afl_id)
 // fix me, size is not initialised, need to be done
     TCGv size = tcg_const_tl((target_ulong)gen_code_size);
     gen_helper_afl_maybe_log(tmp0, size);
+
     tcg_temp_free(tmp0);
     tcg_gen_goto_tb(0);
     tcg_gen_exit_tb(tb, 0);
@@ -2122,11 +2223,14 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tcg_func_start(tcg_ctx);
 
     tcg_ctx->cpu = env_cpu(env);
-    if(getenv("AFL_PC_ADDRESS")){
-        fprintf(stderr, "AFL_PC_ADDRESS: %lu\n", pc);
-        }
+    // if(getenv("AFL_PC_ADDRESS")){
+    //     fprintf(stderr, "AFL_PC_ADDRESS: %lu\n", pc);
+    //     }
+    // OKF("test the output "
+    //   "https://github.com/AFLplusplus/AFLplusplus");
     afl_gen_trace(pc, max_insns);
-    gen_helper_afl_def_use_chain(pc);
+    process_def_use_chain(tb, tb->pc, tb->tc.ptr);
+    // gen_helper_afl_def_use_chain(pc);
     //get the address to do the instrument:kAI
     //CHANGE THE CODE ACCORING TO THE MAXSIMUM INSTRUCTIONS
     gen_intermediate_code(cpu, tb, max_insns);

@@ -158,7 +158,7 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
     /* Emit code to exit the TB, as indicated by db->is_jmp.  */
     ops->tb_stop(db, cpu);
     gen_tb_end(db->tb, db->num_insns - bp_insn);
-
+    // freeDefUseMap();
     if (plugin_enabled) {
         plugin_gen_tb_end(cpu);
     }

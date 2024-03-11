@@ -2,19 +2,25 @@
 #include "uthash.h"
 #ifndef DEFUSECHAINACCESS_H
 #define DEFUSECHAINACCESS_H
-typedef int32_t target_long;
+
+
+// #include "disas/disas.h"
+// #include "exec/exec-all.h"
+// #include "tcg/tcg.h"
+// typedef int32_t target_long;
 typedef uint32_t target_ulong;
 typedef __SIZE_TYPE__ size_t;
 
 // Update to include a structure definition
 typedef struct DefUsePair{
-    target_ulong def;
-    target_ulong use;
+    uintptr_t def;
+    uintptr_t use;
     struct DefUsePair *next;    
 }DefUsePair;
 
+
 typedef struct PcDefUseMapEntry{
-    target_ulong pc; // Key
+    uintptr_t pc; // Key
     DefUsePair *pairs; 
     int num_pairs;
     UT_hash_handle hh; 
@@ -23,9 +29,10 @@ typedef struct PcDefUseMapEntry{
 extern PcDefUseMapEntry *pcDefUseMap;
 
 // void initDefUseMap();
-void addDefUsePairToMap(target_ulong pc, DefUsePair *pair);
-void printDefUsePairsForPC(target_ulong pc);
-void freeDefUseMap();
+void addDefUsePairToMap(uintptr_t pc, DefUsePair *pair);
+void printDefUsePairsForPC(uintptr_t pc);
+void freeDefUseMap(void);
+DefUsePair* getDefUsePairForPC(uintptr_t pc);
 
 
 typedef struct DefUsePair_list DefUsePair_list;
@@ -37,7 +44,7 @@ struct DefUsePair_list{
 
 typedef struct {
     target_ulong tb;
-    target_ulong pc;
+    uintptr_t pc;
     target_ulong tb_code;
     size_t size;
     int num_def;
@@ -51,14 +58,9 @@ typedef struct JsonData_list {
     JsonData data;
     struct JsonData_list *next;
 } JsonData_list;
-// extern JsonData_list *jsonDataListHead;
+
 void read_json_from_file(const char *filename);
 JsonData_list* get_json_data_list(void);
 void free_json_data_list(void);
 void useDataInAnotherFile(void);
-
-
-
-
-
 #endif

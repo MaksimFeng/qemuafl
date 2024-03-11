@@ -3,19 +3,22 @@
 #include <string.h>
 #include "cjson/cJSON.h"
 #include "uthash.h"
+#include "inttypes.h"
 #include "DefUseChainAccess.h" // Make sure this matches the header file name
 
 static JsonData_list *jsonDataListHead = NULL;
 //using use to trace the def_use_chain, use hash map to store the def_use_chain according to the pc
 
 // Forward declaration of functions used internally
-static void addDefUsePairToList(JsonData_list *jsonDataNode, target_ulong def, target_ulong use);
+static void addDefUsePairToList(JsonData_list *jsonDataNode, uintptr_t def, uintptr_t use);
 static void freeDefUsePairList(DefUsePair_list* head);
 
 target_ulong hexStrToTargetUlong(const char *hexStr) {
     return (target_ulong)strtoul(hexStr, NULL, 16);
 }
-
+uintptr_t hexStrTouintptr_t(const char *hexStr) {
+    return (uintptr_t)strtoul(hexStr, NULL, 16);
+}
 // void addDefUsePairToPcMap(PcDefUseMapEntry **map, target_ulong pc, target_ulong def, target_ulong use) {
 //     PcDefUseMapEntry *s;
 //     HASH_FIND_INT(*map, &pc, s); // Try to find the PC entry
@@ -57,7 +60,7 @@ void parse_json(const char *json_string) {
         cJSON *num_use = cJSON_GetObjectItemCaseSensitive(entry, "num_use");
 
         if (tb) newNode->data.tb = hexStrToTargetUlong(tb->valuestring);
-        if (pc) newNode->data.pc = hexStrToTargetUlong(pc->valuestring);
+        if (pc) newNode->data.pc = hexStrTouintptr_t(pc->valuestring);
         if (tb_code) newNode->data.tb_code = hexStrToTargetUlong(tb_code->valuestring);
         if (size) newNode->data.size = (size_t)strtoul(size->valuestring, NULL, 16);
         newNode->data.num_def = num_def ? num_def->valueint : 0;
@@ -70,7 +73,7 @@ void parse_json(const char *json_string) {
             cJSON *def = cJSON_GetArrayItem(pair, 0);
             cJSON *use = cJSON_GetArrayItem(pair, 1);
             if (def && use) {
-                addDefUsePairToList(newNode, hexStrToTargetUlong(def->valuestring), hexStrToTargetUlong(use->valuestring));
+                addDefUsePairToList(newNode, hexStrTouintptr_t(def->valuestring), hexStrTouintptr_t(use->valuestring));
             }
         }
 
@@ -128,7 +131,7 @@ void free_json_data_list(void) {
     }
 }
 
-static void addDefUsePairToList(JsonData_list *jsonDataNode, target_ulong def, target_ulong use) {
+static void addDefUsePairToList(JsonData_list *jsonDataNode, uintptr_t def, uintptr_t use) {
     DefUsePair_list* newNode = (DefUsePair_list*)malloc(sizeof(DefUsePair_list));
     if (!newNode) return;
     
@@ -170,7 +173,7 @@ static void freeDefUsePairList(DefUsePair_list* head) {
 PcDefUseMapEntry *pcDefUseMap = NULL;
 
 // Adds a def-use pair to the hash map for a given PC
-void addDefUsePairToMap(target_ulong pc, DefUsePair *pair) {
+void addDefUsePairToMap(uintptr_t pc, DefUsePair *pair) {
     PcDefUseMapEntry *s;
 
     // Check if the entry for this PC already exists
@@ -178,6 +181,7 @@ void addDefUsePairToMap(target_ulong pc, DefUsePair *pair) {
     if (s == NULL) {
         s = (PcDefUseMapEntry *)malloc(sizeof(PcDefUseMapEntry));
         s->pc = pc;
+        printf("s->pc: %"PRIxPTR"\n", s->pc);
         s->pairs = NULL;
         s->num_pairs = 0;
         HASH_ADD(hh, pcDefUseMap, pc, sizeof(pc), s);
@@ -190,20 +194,35 @@ void addDefUsePairToMap(target_ulong pc, DefUsePair *pair) {
 }
 
 // Prints all def-use pairs for a given PC
-void printDefUsePairsForPC(target_ulong pc) {
+void printDefUsePairsForPC(uintptr_t pc) {
     PcDefUseMapEntry *s;
 
     HASH_FIND(hh, pcDefUseMap, &pc, sizeof(pc), s);
     if (s != NULL) {
-        printf("PC: 0x%x has %d def-use pairs:\n", s->pc, s->num_pairs);
+        printf("PC: 0x%"PRIxPTR" has %d def-use pairs:\n", s->pc, s->num_pairs);
         DefUsePair *pair = s->pairs;
         while (pair != NULL) {
-            printf("  Def: 0x%x, Use: 0x%x\n", pair->def, pair->use);
+            printf("  Def: 0x%"PRIxPTR", Use: 0x%"PRIxPTR"\n", pair->def, pair->use);
+            // return pair;
             pair = pair->next;
         }
     } else {
-        printf("No def-use pairs found for PC: 0x%x\n", pc);
+        printf("No def-use pairs found for PC: 0x%"PRIxPTR"\n", pc);
     }
+    // return pair;
+}
+DefUsePair* getDefUsePairForPC(uintptr_t pc){
+    //return defs and uses according to pc
+    PcDefUseMapEntry *s;
+
+    HASH_FIND(hh, pcDefUseMap, &pc, sizeof(pc), s);
+    if (s != NULL) {
+        DefUsePair *pair = s->pairs;
+        return pair;
+    } else {
+        printf("No def-use pairs found for PC: 0x%"PRIxPTR"\n", pc);
+        return NULL;
+    }    
 }
 
 // Frees the hash map
