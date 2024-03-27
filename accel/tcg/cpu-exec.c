@@ -541,7 +541,7 @@ void afl_setup(void) {
 
   int shm_id;
   // read_json_from_file("/home/kai/project/qemu-afl/AFLPLUSSPLUSS_DEV/AFLplusplus/qemu_mode/qemuafl/accel/tcg/data_def_use_chain.json");
-  read_json_from_file("/home/kai/project/qemu-afl/AFLPLUSSPLUSS_DEV/angr/bin/addr2lin/data_def_use_chain.json");
+  read_json_from_file("/home/kai/project/qemu-afl/AFLPLUSSPLUSS_DEV/bin/strip1/strip_def_use_chain.json");
   // read_json_from_file(getenv("_afl_dataflow_file"));
   JsonData_list* dataList = get_json_data_list();
   if(dataList!=NULL){

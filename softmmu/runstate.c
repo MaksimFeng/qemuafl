@@ -806,7 +806,7 @@ void qemu_cleanup(void)
      * requests happening from here on anyway.
      */
     bdrv_drain_all_begin();
-
+    freeDefUseMap();
     /* No more vcpu or device emulation activity beyond this point */
     vm_shutdown();
     replay_finish();
