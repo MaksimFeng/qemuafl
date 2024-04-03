@@ -174,7 +174,7 @@ static void process_def_use_chain(void * tb, uintptr_t cur_pc, const void * tb_c
         // fprintf(stderr, "pair1: %p\n", pair);
         // fprintf(stderr, "pair23232: %p\n", pair);
         // fprintf(stderr, "pair2: %p\n", pair);
-        fprintf(stderr, "Befor HashDef: 0x%x, Use: 0x%x\n", pair->def, pair->use);
+        // fprintf(stderr, "Befor HashDef: 0x%x, Use: 0x%x\n", pair->def, pair->use);
         def = (uintptr_t)afl_hash_ip((uint64_t)pair->def); 
         use = (uintptr_t)afl_hash_ip((uint64_t)pair->use); 
         // fprintf(stderr, "pair1: %p\n", pair);
@@ -192,7 +192,7 @@ static void process_def_use_chain(void * tb, uintptr_t cur_pc, const void * tb_c
         // fprintf(stderr, "cur_pc: 0x%"PRIxPTR"\n", cur_pc);
         def &= (MAP_SIZE - 1);
         use &= (MAP_SIZE - 1);
-        fprintf(stderr, "afterhash: %p\n", def);
+        // fprintf(stderr, "afterhash: %p\n", def);
 
         TCGv def_v = tcg_const_tl((uintptr_t)def);
 
@@ -201,18 +201,21 @@ static void process_def_use_chain(void * tb, uintptr_t cur_pc, const void * tb_c
         // cur_pc = (uintptr_t)(afl_hash_ip((uint64_t)cur_pc));
         // cur_pc &= (MAP_SIZE - 1);
         // TCGv cur_loc_v = tcg_const_tl(cur_pc);
-        fprintf(stderr, "afterhash: %p\n", cur_pc);
+        // fprintf(stderr, "afterhashdef: %p\n", def_v);
+
+        // fprintf(stderr, "afterhashuse: %p\n", use_v);
         gen_helper_afl_def_use_chain(use_v, def_v);
         // if (unlikely(afl_track_unstable_log_fd() >= 0)) {
         //     gen_helper_afl_maybe_log_trace(def, use);
         // } else {
         //     gen_helper_afl_maybe_log(def, use);
         // }
-        OKF("pair3: !!!!!!!!!" );
+        // OKF("pair3: !!!!!!!!!" );
         pair = pair->next;
         // tcg_temp_free(cur_loc_v);
         tcg_temp_free(def_v);
         tcg_temp_free(use_v);
+        // free_json_data_list();
 
     } 
 
@@ -247,6 +250,8 @@ static void afl_gen_trace(target_ulong cur_loc, int size) {
   // cur_loc &= MAP_SIZE - 1;
   //location mangling The current location is then mangled to produce a quasi-uniform value. This is done by bit-shifting and XOR operations:  The mangled cur_loc is then masked to ensure it falls within the bounds of the AFL map size. which is used to record execution paths. Kai
 //   fprintf(stderr, "cur_loc before : %lu\n", cur_loc);
+ 
+//   fprintf(stderr, "cur_pc_afl: 0x%"PRIxPTR"\n", cur_loc);
   cur_loc = (uintptr_t)(afl_hash_ip((uint64_t)cur_loc));
   cur_loc &= (MAP_SIZE - 1);
 //   fprintf(stderr, "cur_loc after : 0x%"PRIxPTR"\n", cur_loc);
@@ -259,6 +264,8 @@ static void afl_gen_trace(target_ulong cur_loc, int size) {
 //   fprintf(stderr,"The current Address is %lu\n", cur_loc);
   //Here, a pointer to prev_loc is created using tcg_const_ptr, which is a helper function to create a constant pointer in TCG's intermediate representation. prev_loc is a static thread-local variable that stores the previously executed location.
   TCGv cur_loc_v = tcg_const_tl(cur_loc);
+//   fprintf(stderr, "cur_afl: 0x%"PRIxPTR"\n", cur_loc_v);
+//   fprintf(stderr, "use: 0x%"PRIxPTR"\n", use);
   if (unlikely(afl_track_unstable_log_fd() >= 0)) {
     // gen_helper_afl_maybe_log_trace(cur_loc_v);
     gen_helper_afl_maybe_log_trace(cur_loc_v, size_point);
@@ -2223,11 +2230,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tcg_func_start(tcg_ctx);
 
     tcg_ctx->cpu = env_cpu(env);
-    // if(getenv("AFL_PC_ADDRESS")){
-    //     fprintf(stderr, "AFL_PC_ADDRESS: %lu\n", pc);
-    //     }
-    // OKF("test the output "
-    //   "https://github.com/AFLplusplus/AFLplusplus");
+
     afl_gen_trace(pc, max_insns);
     process_def_use_chain(tb, tb->pc, tb->tc.ptr);
     // gen_helper_afl_def_use_chain(pc);
@@ -2236,7 +2239,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     gen_intermediate_code(cpu, tb, max_insns);
     tcg_ctx->cpu = NULL;
     max_insns = tb->icount;
-
+    
     trace_translate_block(tb, tb->pc, tb->tc.ptr);
 
     /* If we are tracking block instability, then since afl-fuzz will log the ids
